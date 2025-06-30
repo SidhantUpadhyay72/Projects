@@ -24,7 +24,7 @@ forecast_file = colB.file_uploader("Upload 'oil_forecast_by_asset_well_field.csv
 @st.cache_data
 def load_data(file):
     df = pd.read_csv(file)
-    df['Date'] = pd.to_datetime(df['Date'], format="%d-%m-%Y")
+    df['Date'] = pd.to_datetime(df['Date'], errors='coerce')
     df['Oil_Production_MT'] = np.clip(df['Oil_Production_MT'], 0, df['Oil_Production_MT'].quantile(0.995))
     return df
 
@@ -36,7 +36,6 @@ def create_lag_features(df, lags=3):
 if masked_file is not None:
     df = load_data(masked_file)
 
-    # Forecast CSV uploaded (optional)
     forecast_df = None
     if forecast_file is not None:
         try:
@@ -46,7 +45,6 @@ if masked_file is not None:
             st.warning(f"⚠️ Could not read forecast file: {e}")
             forecast_df = None
 
-    # Forecasting Section
     asset = st.selectbox("Select Asset", sorted(df['Masked_Asset'].unique()))
     wells = df[df['Masked_Asset'] == asset]['Masked_Well_no'].unique()
     well = st.selectbox("Select Well", sorted(wells))
@@ -119,20 +117,13 @@ if masked_file is not None:
         except Exception as e:
             st.error(f"❌ Error generating forecast: {e}")
 
-    # --- Chatbot in Sidebar ---
-    st.sidebar.title("💬 Ask Questions About Your Data")
-    chat_file = st.sidebar.selectbox("Choose data source for chatbot", ["masked_output1.csv", "oil_forecast_by_asset_well_field.csv"])
+    # --- Combined Chatbot for Both Files ---
+    if masked_file and forecast_file:
+        st.sidebar.title("💬 Ask Questions About Both Files")
+        combined_df = pd.concat([df, forecast_df], axis=0, ignore_index=True)
 
-    if chat_file == "masked_output1.csv" and masked_file:
-        chat_df = df.copy()
-    elif chat_file == "oil_forecast_by_asset_well_field.csv" and forecast_file:
-        chat_df = forecast_df.copy()
-    else:
-        chat_df = None
-
-    if chat_df is not None:
         splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=100)
-        loader = DataFrameLoader(chat_df, page_content_column=chat_df.columns[0])
+        loader = DataFrameLoader(combined_df, page_content_column=combined_df.columns[0])
         docs = loader.load()
         chunks = splitter.split_documents(docs)
         vectordb = FAISS.from_documents(chunks, embedding=None)
@@ -152,4 +143,4 @@ if masked_file is not None:
         for speaker, msg in st.session_state.chat_history:
             message(msg, is_user=(speaker == "You"))
     else:
-        st.sidebar.info("Upload a file to use chatbot")
+        st.sidebar.warning("⚠️ Upload both files to use the chatbot.")
