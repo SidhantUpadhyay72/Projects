@@ -1,11 +1,9 @@
 streamlit
+streamlit-chat
 pandas
 numpy
-xgboost
 plotly
-openai
-langchain>=0.2.0
-langchain-community
+xgboost
+langchain
 langchain-openai
 faiss-cpu
-streamlit-chat
