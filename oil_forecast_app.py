@@ -17,8 +17,7 @@ from langchain.chains import RetrievalQA
 from streamlit_chat import message
 
 # === Set API Key ===
-os.environ["OPENAI_API_KEY"] = "your-openai-api-key"  # Replace with your key or use st.secrets
-
+os.environ["OPENAI_API_KEY"] = st.secrets["OPENAI_API_KEY"]
 st.set_page_config(layout="wide")
 st.title("🛢️ Oil Forecast Dashboard + 🤖 AI Chatbot")
 
