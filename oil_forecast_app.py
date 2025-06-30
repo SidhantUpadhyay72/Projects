@@ -132,7 +132,11 @@ if masked_file is not None:
 
         splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=100)
         chunks = splitter.split_documents(documents)
-        vectordb = FAISS.from_documents(chunks, embedding=None)
+        from langchain_community.embeddings import OllamaEmbeddings  # ⬅ Add this
+        embedding = OllamaEmbeddings(model="mistral")  # ⬅ New line
+        vectordb = FAISS.from_documents(chunks, embedding=embedding)  # ⬅ Fixed
+
+        vectordb = FAISS.from_documents(chunks, embedding=embedding)
         retriever = vectordb.as_retriever()
         llm = Ollama(model="mistral")
         qa_chain = RetrievalQA.from_chain_type(llm=llm, retriever=retriever)
