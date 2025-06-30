@@ -128,6 +128,11 @@ if masked_file is not None:
         combined_df = combined_df.dropna(subset=[text_col])
 
         splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=100)
+       # Convert first column to string (required for LangChain Document class)
+        text_col = combined_df.columns[0]
+        combined_df[text_col] = combined_df[text_col].astype(str)
+        combined_df = combined_df.dropna(subset=[text_col])
+
         loader = DataFrameLoader(combined_df, page_content_column=text_col)
         docs = loader.load()
 
