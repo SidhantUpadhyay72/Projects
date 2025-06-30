@@ -6,27 +6,27 @@ import plotly.graph_objects as go
 from xgboost import XGBRegressor
 from datetime import datetime
 
-# LangChain imports
+# ✅ Corrected LangChain imports
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
-from langchain.vectorstores.faiss import FAISS
+from langchain_community.vectorstores.faiss import FAISS
 from langchain.text_splitter import CharacterTextSplitter
 from langchain.docstore.document import Document
 from langchain.chains import RetrievalQA
 from streamlit_chat import message
 
-# Secure API key
+# === Secure API key ===
 os.environ["OPENAI_API_KEY"] = st.secrets["OPENAI_API_KEY"]
 
-# Page Setup
+# === Page Setup ===
 st.set_page_config(layout="wide")
 st.title("🛢️ Oil Forecast Dashboard + 🤖 AI Chatbot")
 
-# Upload CSVs
+# === Upload CSV Files ===
 col1, col2 = st.columns(2)
 masked_file = col1.file_uploader("Upload 'masked_output1.csv'", type="csv")
 forecast_file = col2.file_uploader("Upload 'oil_forecast_by_asset_well_field.csv'", type="csv")
 
-# Load Helper
+# === Helper Functions ===
 @st.cache_data
 def load_data(file):
     df = pd.read_csv(file)
@@ -39,7 +39,7 @@ def create_lag_features(df, lags=3):
         df[f'lag_{lag}'] = df['Oil_Production_MT'].shift(lag)
     return df.dropna()
 
-# Main logic
+# === Main Logic ===
 if masked_file is not None:
     df = load_data(masked_file)
     forecast_df = None
@@ -49,12 +49,12 @@ if masked_file is not None:
             forecast_df = pd.read_csv(forecast_file)
             forecast_df['Date'] = pd.to_datetime(forecast_df['Date'])
         except Exception as e:
-            st.warning(f"⚠️ Error reading forecast file: {e}")
+            st.warning(f"⚠️ Could not read forecast file: {e}")
 
-    # === Tabs for Forecasting and Chatbot ===
+    # === Tabs for Forecast & Chatbot ===
     tab1, tab2 = st.tabs(["📈 Forecasting Dashboard", "💬 AI Chatbot"])
 
-    # === Tab 1: Forecasting ===
+    # === Forecasting ===
     with tab1:
         st.subheader("Oil Production Forecasting")
 
@@ -72,7 +72,9 @@ if masked_file is not None:
         if st.button("Generate Forecast"):
             try:
                 start_date = datetime(int(year), int(month), int(day))
-                subset = df[(df['Masked_Asset'] == asset) & (df['Masked_Well_no'] == well) & (df['Masked_Field'] == field)].sort_values("Date")
+                subset = df[(df['Masked_Asset'] == asset) &
+                            (df['Masked_Well_no'] == well) &
+                            (df['Masked_Field'] == field)].sort_values("Date")
                 subset = create_lag_features(subset)
 
                 if subset.shape[0] < 10:
@@ -125,11 +127,10 @@ if masked_file is not None:
             except Exception as e:
                 st.error(f"❌ Forecasting Error: {e}")
 
-    # === Tab 2: Chatbot ===
+    # === AI Chatbot ===
     with tab2:
-        st.subheader("Ask the AI about your uploaded data")
+        st.subheader("Ask the AI About the Uploaded Data")
 
-        # Prepare documents
         df_masked_text = df.to_csv(index=False)
         docs = [Document(page_content=df_masked_text, metadata={"source": "masked_output1.csv"})]
 
