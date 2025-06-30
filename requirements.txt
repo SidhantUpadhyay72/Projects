@@ -5,3 +5,8 @@ plotly==5.22.0
 xgboost==2.0.3
 scikit-learn
 streamlit-chat
+openai
+langchain
+faiss-cpu
+tiktoken
+
