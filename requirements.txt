@@ -3,8 +3,7 @@ pandas
 numpy
 plotly
 xgboost
-streamlit-chat
-langchain
-langchain-openai
 faiss-cpu
-openai
+langchain
+langchain-community
+streamlit-chat
