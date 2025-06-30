@@ -7,9 +7,11 @@ from xgboost import XGBRegressor
 from datetime import datetime
 
 # LangChain imports
-from langchain.chat_models import ChatOpenAI
+from langchain_openai import ChatOpenAI
+
 from langchain.vectorstores.faiss import FAISS
-from langchain.embeddings.openai import OpenAIEmbeddings
+from langchain_openai import OpenAIEmbeddings
+
 from langchain.text_splitter import CharacterTextSplitter
 from langchain.docstore.document import Document
 from langchain.chains import RetrievalQA
