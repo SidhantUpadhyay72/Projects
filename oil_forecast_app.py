@@ -7,7 +7,7 @@ from datetime import datetime
 
 # Chatbot imports
 from langchain.vectorstores import FAISS
-from langchain.document_loaders import DataFrameLoader
+from langchain.document_loaders import Document
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain.chains import RetrievalQA
 from langchain_community.llms import Ollama
@@ -118,25 +118,20 @@ if masked_file is not None:
             st.error(f"❌ Error generating forecast: {e}")
 
     # --- Combined Chatbot for Both Files ---
-    if masked_file and forecast_file:
+    if masked_file is not None and forecast_file is not None:
         st.sidebar.title("💬 Ask Questions About Both Files")
-        combined_df = pd.concat([df, forecast_df], axis=0, ignore_index=True)
 
-        # Convert the first column to string and drop NA
-        text_col = combined_df.columns[0]
-        combined_df[text_col] = combined_df[text_col].astype(str)
-        combined_df = combined_df.dropna(subset=[text_col])
+        # Convert each row into a single document
+        combined_df = pd.concat([df, forecast_df], axis=0, ignore_index=True)
+        combined_df = combined_df.dropna(how="all")
+
+        documents = []
+        for _, row in combined_df.iterrows():
+            row_str = "\n".join([f"{col}: {row[col]}" for col in combined_df.columns if pd.notnull(row[col])])
+            documents.append(Document(page_content=row_str))
 
         splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=100)
-       # Convert first column to string (required for LangChain Document class)
-        text_col = combined_df.columns[0]
-        combined_df[text_col] = combined_df[text_col].astype(str)
-        combined_df = combined_df.dropna(subset=[text_col])
-
-        loader = DataFrameLoader(combined_df, page_content_column=text_col)
-        docs = loader.load()
-
-        chunks = splitter.split_documents(docs)
+        chunks = splitter.split_documents(documents)
         vectordb = FAISS.from_documents(chunks, embedding=None)
         retriever = vectordb.as_retriever()
         llm = Ollama(model="mistral")
