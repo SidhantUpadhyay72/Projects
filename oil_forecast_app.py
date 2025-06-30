@@ -122,9 +122,15 @@ if masked_file is not None:
         st.sidebar.title("💬 Ask Questions About Both Files")
         combined_df = pd.concat([df, forecast_df], axis=0, ignore_index=True)
 
+        # Convert the first column to string and drop NA
+        text_col = combined_df.columns[0]
+        combined_df[text_col] = combined_df[text_col].astype(str)
+        combined_df = combined_df.dropna(subset=[text_col])
+
         splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=100)
-        loader = DataFrameLoader(combined_df, page_content_column=combined_df.columns[0])
+        loader = DataFrameLoader(combined_df, page_content_column=text_col)
         docs = loader.load()
+
         chunks = splitter.split_documents(docs)
         vectordb = FAISS.from_documents(chunks, embedding=None)
         retriever = vectordb.as_retriever()
