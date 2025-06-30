@@ -5,6 +5,14 @@ import plotly.graph_objects as go
 from xgboost import XGBRegressor
 from datetime import datetime
 
+# Chatbot imports
+from langchain.vectorstores import FAISS
+from langchain.document_loaders import DataFrameLoader
+from langchain.text_splitter import RecursiveCharacterTextSplitter
+from langchain.chains import RetrievalQA
+from langchain_community.llms import Ollama
+from streamlit_chat import message
+
 st.set_page_config(layout="wide")
 st.title("🛢️ Oil Production Forecast Dashboard")
 
@@ -38,20 +46,18 @@ if masked_file is not None:
             st.warning(f"⚠️ Could not read forecast file: {e}")
             forecast_df = None
 
-    # Asset → Well → Field Selection
+    # Forecasting Section
     asset = st.selectbox("Select Asset", sorted(df['Masked_Asset'].unique()))
     wells = df[df['Masked_Asset'] == asset]['Masked_Well_no'].unique()
     well = st.selectbox("Select Well", sorted(wells))
     fields = df[(df['Masked_Asset'] == asset) & (df['Masked_Well_no'] == well)]['Masked_Field'].unique()
     field = st.selectbox("Select Field", sorted(fields))
 
-    # Date Input
     col1, col2, col3 = st.columns(3)
     year = col1.text_input("Forecast Start Year (e.g., 2025)", value="2025")
     month = col2.text_input("Month (1-12)", value="6")
     day = col3.text_input("Day (1-31)", value="30")
 
-    # Forecast Button
     if st.button("Generate Forecast"):
         try:
             start_date = datetime(int(year), int(month), int(day))
@@ -84,45 +90,66 @@ if masked_file is not None:
 
                     model_forecast = pd.DataFrame(forecast_vals, columns=["Date", "Forecast_Model"])
 
-                    # Plotting
                     actual = subset[(subset['Date'] >= start_date - pd.Timedelta(days=30)) & (subset['Date'] < start_date)]
                     fig = go.Figure()
 
                     if not actual.empty:
-                        fig.add_trace(go.Scatter(
-                            x=actual['Date'], y=actual['Oil_Production_MT'],
-                            mode='lines+markers', name="Actual (Last 30 days)",
-                            line=dict(color="steelblue")
-                        ))
+                        fig.add_trace(go.Scatter(x=actual['Date'], y=actual['Oil_Production_MT'],
+                                                 mode='lines+markers', name="Actual (Last 30 days)",
+                                                 line=dict(color="steelblue")))
 
-                    fig.add_trace(go.Scatter(
-                        x=model_forecast["Date"], y=model_forecast["Forecast_Model"],
-                        mode='lines+markers', name="Forecast (Model)", line=dict(color="crimson")
-                    ))
+                    fig.add_trace(go.Scatter(x=model_forecast["Date"], y=model_forecast["Forecast_Model"],
+                                             mode='lines+markers', name="Forecast (Model)", line=dict(color="crimson")))
 
-                    # If uploaded forecast matches the selected group
                     if forecast_df is not None:
-                        uploaded_forecast = forecast_df[
-                            (forecast_df['Masked_Asset'] == asset) &
-                            (forecast_df['Masked_Well_no'] == well) &
-                            (forecast_df['Masked_Field'] == field)
-                        ]
+                        uploaded_forecast = forecast_df[(forecast_df['Masked_Asset'] == asset) &
+                                                        (forecast_df['Masked_Well_no'] == well) &
+                                                        (forecast_df['Masked_Field'] == field)]
                         if not uploaded_forecast.empty:
-                            fig.add_trace(go.Scatter(
-                                x=uploaded_forecast['Date'], y=uploaded_forecast['Forecast_Oil_Production_MT'],
-                                mode='lines+markers', name="Forecast (Uploaded)", line=dict(color="orange", dash="dot")
-                            ))
+                            fig.add_trace(go.Scatter(x=uploaded_forecast['Date'], y=uploaded_forecast['Forecast_Oil_Production_MT'],
+                                                     mode='lines+markers', name="Forecast (Uploaded)", line=dict(color="orange", dash="dot")))
 
-                    fig.update_layout(
-                        title=f"Forecast from {start_date.strftime('%d-%m-%Y')} for {asset} / {well} / {field}",
-                        xaxis_title="Date",
-                        yaxis_title="Oil Production (MT)",
-                        template="plotly_white",
-                        height=550
-                    )
+                    fig.update_layout(title=f"Forecast from {start_date.strftime('%d-%m-%Y')} for {asset} / {well} / {field}",
+                                      xaxis_title="Date", yaxis_title="Oil Production (MT)",
+                                      template="plotly_white", height=550)
 
                     st.plotly_chart(fig, use_container_width=True)
                     st.dataframe(model_forecast.set_index("Date"))
 
         except Exception as e:
             st.error(f"❌ Error generating forecast: {e}")
+
+    # --- Chatbot in Sidebar ---
+    st.sidebar.title("💬 Ask Questions About Your Data")
+    chat_file = st.sidebar.selectbox("Choose data source for chatbot", ["masked_output1.csv", "oil_forecast_by_asset_well_field.csv"])
+
+    if chat_file == "masked_output1.csv" and masked_file:
+        chat_df = df.copy()
+    elif chat_file == "oil_forecast_by_asset_well_field.csv" and forecast_file:
+        chat_df = forecast_df.copy()
+    else:
+        chat_df = None
+
+    if chat_df is not None:
+        splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=100)
+        loader = DataFrameLoader(chat_df, page_content_column=chat_df.columns[0])
+        docs = loader.load()
+        chunks = splitter.split_documents(docs)
+        vectordb = FAISS.from_documents(chunks, embedding=None)
+        retriever = vectordb.as_retriever()
+        llm = Ollama(model="mistral")
+        qa_chain = RetrievalQA.from_chain_type(llm=llm, retriever=retriever)
+
+        if "chat_history" not in st.session_state:
+            st.session_state.chat_history = []
+
+        user_input = st.sidebar.text_input("Ask your question")
+        if user_input:
+            answer = qa_chain.run(user_input)
+            st.session_state.chat_history.append(("You", user_input))
+            st.session_state.chat_history.append(("Bot", answer))
+
+        for speaker, msg in st.session_state.chat_history:
+            message(msg, is_user=(speaker == "You"))
+    else:
+        st.sidebar.info("Upload a file to use chatbot")
