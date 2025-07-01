@@ -8,7 +8,7 @@ from datetime import datetime, timedelta
 st.set_page_config(layout="wide")
 st.title("🛢️ Oil Production Forecast Dashboard")
 
-# Upload data
+# File upload
 col1, col2 = st.columns(2)
 masked_file = col1.file_uploader("Upload 'masked_output1.csv'", type=["csv"])
 forecast_file = col2.file_uploader("Upload 'oil_forecast_by_asset_well_field.csv' (optional)", type=["csv"])
@@ -28,7 +28,7 @@ def create_lag_features(df, lags=3):
 if masked_file is not None:
     df = load_data(masked_file)
 
-    # Optional uploaded forecast
+    # Optional forecast CSV
     uploaded_forecast = None
     if forecast_file is not None:
         try:
@@ -37,7 +37,7 @@ if masked_file is not None:
         except Exception as e:
             st.warning(f"⚠️ Could not read forecast file: {e}")
 
-    # Selectors
+    # UI selectors
     asset = st.selectbox("Select Asset", sorted(df['Masked_Asset'].unique()))
     well = st.selectbox("Select Well", sorted(df[df['Masked_Asset'] == asset]['Masked_Well_no'].unique()))
     field = st.selectbox("Select Field", sorted(df[(df['Masked_Asset'] == asset) & (df['Masked_Well_no'] == well)]['Masked_Field'].unique()))
@@ -72,18 +72,25 @@ if masked_file is not None:
 
                 forecast_df = pd.DataFrame(forecast_vals, columns=['Date', 'Forecast_Oil_Production_MT'])
 
-                # ✅ Exact match with forecast_date
+                # ✅ Show forecast for selected date & plot marker
+                fig = go.Figure()
                 match = forecast_df[forecast_df['Date'] == forecast_date]
                 if not match.empty:
                     val = match.iloc[0]['Forecast_Oil_Production_MT']
-                    st.success(f"📅 Forecasted Oil Production on {forecast_date.strftime('%d-%m-%Y')}: **{val:.2f} MT**")
+                    st.success(f"📅 Forecasted Oil Production on **{forecast_date.strftime('%d-%m-%Y')}**: **{val:.2f} MT**")
+
+                    fig.add_trace(go.Scatter(
+                        x=[forecast_date], y=[val],
+                        mode='markers+text',
+                        name='Selected Forecast Date',
+                        marker=dict(color='black', size=12, symbol='circle'),
+                        text=[f"{val:.2f}"],
+                        textposition='top center'
+                    ))
                 else:
-                    st.error(f"❌ Forecast for {forecast_date} not found.")
+                    st.warning(f"⚠️ Forecast for {forecast_date.strftime('%d-%m-%Y')} not found.")
 
-                # 📈 Plot
-                fig = go.Figure()
-
-                # Last 30 days actual
+                # 📈 Plot actuals
                 actual = subset[(subset['Date'] >= pd.to_datetime(forecast_date) - timedelta(days=30)) &
                                 (subset['Date'] < pd.to_datetime(forecast_date))]
                 if not actual.empty:
@@ -93,14 +100,14 @@ if masked_file is not None:
                         line=dict(color='steelblue')
                     ))
 
-                # Forecast plot
+                # 🔮 Plot model forecast
                 fig.add_trace(go.Scatter(
                     x=pd.to_datetime(forecast_df['Date']), y=forecast_df['Forecast_Oil_Production_MT'],
-                    mode='lines+markers', name='Forecast (Next 30 Days)',
+                    mode='lines+markers', name='Forecast (Model)',
                     line=dict(color='crimson')
                 ))
 
-                # Optional uploaded forecast
+                # 🟠 Optional uploaded forecast
                 if uploaded_forecast is not None:
                     uf = uploaded_forecast[
                         (uploaded_forecast['Masked_Asset'] == asset) &
@@ -115,7 +122,7 @@ if masked_file is not None:
                         ))
 
                 fig.update_layout(
-                    title=f"Forecast from {forecast_date.strftime('%d-%m-%Y')} — {asset} / {well} / {field}",
+                    title=f"Forecast from {forecast_date.strftime('%d-%m-%Y')} for {asset} / {well} / {field}",
                     xaxis_title="Date",
                     yaxis_title="Oil Production (MT)",
                     template="plotly_white",
@@ -123,4 +130,4 @@ if masked_file is not None:
                 )
 
                 st.plotly_chart(fig, use_container_width=True)
-                st.dataframe(forecast_df.set_index('Date'))
+                st.dataframe(forecast_df.set_index("Date"))
