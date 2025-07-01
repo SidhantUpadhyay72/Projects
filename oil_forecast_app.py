@@ -69,29 +69,28 @@ if masked_file is not None:
 
     if st.button("Generate Forecast"):
         try:
-            start_date = datetime(int(year), int(month), int(day))
+            forecast_start = datetime(int(year), int(month), int(day))
+
             subset = df[(df['Masked_Asset'] == asset) &
                         (df['Masked_Well_no'] == well) &
                         (df['Masked_Field'] == field)].sort_values("Date")
 
             lags = 3
             subset = create_lag_features(subset, lags=lags)
-            if subset.shape[0] < 10:
-                st.error("❌ Not enough data after lag creation.")
+
+            if subset.shape[0] < lags:
+                st.error("❌ Not enough data to generate forecast.")
                 st.stop()
 
+            # Train model
             X = subset[[f'lag_{i}' for i in range(1, lags + 1)]]
             y = subset['Oil_Production_MT']
             model = XGBRegressor(n_estimators=100, learning_rate=0.1)
             model.fit(X, y)
 
-            history = subset[subset['Date'] < start_date].copy()
-            if history.shape[0] < lags:
-                st.error("❌ Not enough data before forecast start date.")
-                st.stop()
-
-            last_known = history.iloc[-lags:]['Oil_Production_MT'].tolist()
-            forecast_dates = pd.date_range(start=start_date, periods=5, freq='MS')
+            # Use latest available values for forecasting
+            last_known = subset['Oil_Production_MT'].iloc[-lags:].tolist()
+            forecast_dates = pd.date_range(start=forecast_start, periods=5, freq='MS')
             forecast_vals = []
 
             for d in forecast_dates:
@@ -103,7 +102,7 @@ if masked_file is not None:
             model_forecast = pd.DataFrame(forecast_vals, columns=["Date", "Forecast_Model"])
 
             # Plotting
-            actual = subset[(subset['Date'] >= start_date - pd.Timedelta(days=30)) & (subset['Date'] < start_date)]
+            actual = subset[(subset['Date'] >= forecast_start - pd.Timedelta(days=30)) & (subset['Date'] < forecast_start)]
             fig = go.Figure()
 
             if not actual.empty:
@@ -132,7 +131,7 @@ if masked_file is not None:
                     ))
 
             fig.update_layout(
-                title=f"Forecast from {start_date.strftime('%d-%m-%Y')} for {asset} / {well} / {field}",
+                title=f"Forecast from {forecast_start.strftime('%d-%m-%Y')} for {asset} / {well} / {field}",
                 xaxis_title="Date",
                 yaxis_title="Oil Production (MT)",
                 template="plotly_white",
