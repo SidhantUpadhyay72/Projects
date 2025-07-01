@@ -28,7 +28,7 @@ def create_lag_features(df, lags=3):
 if masked_file is not None:
     df = load_data(masked_file)
 
-    # Forecast CSV uploaded (optional)
+    # Load forecast file if uploaded
     forecast_df = None
     if forecast_file is not None:
         try:
@@ -38,16 +38,16 @@ if masked_file is not None:
             st.warning(f"⚠️ Could not read forecast file: {e}")
             forecast_df = None
 
-    # Asset → Well → Field Selection
+    # Selection Filters
     asset = st.selectbox("Select Asset", sorted(df['Masked_Asset'].unique()))
     wells = df[df['Masked_Asset'] == asset]['Masked_Well_no'].unique()
     well = st.selectbox("Select Well", sorted(wells))
     fields = df[(df['Masked_Asset'] == asset) & (df['Masked_Well_no'] == well)]['Masked_Field'].unique()
     field = st.selectbox("Select Field", sorted(fields))
 
-    # Date Input
+    # Forecast Start Date
     col1, col2, col3 = st.columns(3)
-    year = col1.text_input("Forecast Start Year (e.g., 2025)", value="2025")
+    year = col1.text_input("Forecast Start Year", value="2025")
     month = col2.text_input("Month (1-12)", value="6")
     day = col3.text_input("Day (1-31)", value="30")
 
@@ -55,6 +55,7 @@ if masked_file is not None:
     if st.button("Generate Forecast"):
         try:
             start_date = datetime(int(year), int(month), int(day))
+
             subset = df[(df['Masked_Asset'] == asset) &
                         (df['Masked_Well_no'] == well) &
                         (df['Masked_Field'] == field)].sort_values("Date")
@@ -85,13 +86,13 @@ if masked_file is not None:
                     model_forecast = pd.DataFrame(forecast_vals, columns=["Date", "Forecast_Model"])
 
                     # Plotting
-                    actual = subset[(subset['Date'] >= start_date - pd.Timedelta(days=30)) & (subset['Date'] < start_date)]
+                    actual = subset[(subset['Date'] >= start_date - pd.Timedelta(days=30)) & (subset['Date'] <= start_date)]
                     fig = go.Figure()
 
                     if not actual.empty:
                         fig.add_trace(go.Scatter(
                             x=actual['Date'], y=actual['Oil_Production_MT'],
-                            mode='lines+markers', name="Actual (Last 30 days)",
+                            mode='lines+markers', name="Actual (Last 30 days + Start Date)",
                             line=dict(color="steelblue")
                         ))
 
@@ -100,7 +101,6 @@ if masked_file is not None:
                         mode='lines+markers', name="Forecast (Model)", line=dict(color="crimson")
                     ))
 
-                    # If uploaded forecast matches the selected group
                     if forecast_df is not None:
                         uploaded_forecast = forecast_df[
                             (forecast_df['Masked_Asset'] == asset) &
@@ -109,8 +109,11 @@ if masked_file is not None:
                         ]
                         if not uploaded_forecast.empty:
                             fig.add_trace(go.Scatter(
-                                x=uploaded_forecast['Date'], y=uploaded_forecast['Forecast_Oil_Production_MT'],
-                                mode='lines+markers', name="Forecast (Uploaded)", line=dict(color="orange", dash="dot")
+                                x=uploaded_forecast['Date'],
+                                y=uploaded_forecast['Forecast_Oil_Production_MT'],
+                                mode='lines+markers',
+                                name="Forecast (Uploaded)",
+                                line=dict(color="orange", dash="dot")
                             ))
 
                     fig.update_layout(
