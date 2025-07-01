@@ -1,9 +1,6 @@
-streamlit
-pandas
-numpy
-plotly
-xgboost
-faiss-cpu
-langchain
-langchain-community
-streamlit-chat
+streamlit==1.46.1
+pandas==2.3.0
+numpy==2.3.1
+plotly==5.22.0
+xgboost==2.0.3
+scikit-learn
