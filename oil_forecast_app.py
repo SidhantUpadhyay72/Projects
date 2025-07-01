@@ -85,7 +85,7 @@ if masked_file is not None:
                     model_forecast = pd.DataFrame(forecast_vals, columns=["Date", "Forecast_Model"])
 
                     # Plotting
-                    actual = subset[(subset['Date'] >= start_date - pd.Timedelta(days=30)) & (subset['Date'] <= start_date)]
+                    actual = subset[(subset['Date'] >= start_date - pd.Timedelta(days=30)) & (subset['Date'] < start_date)]
                     fig = go.Figure()
 
                     if not actual.empty:
