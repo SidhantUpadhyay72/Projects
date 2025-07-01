@@ -1,9 +1,9 @@
-langchain
-langchain-experimental
-openai
+streamlit
 pandas
 numpy
-xgboost
 plotly
-streamlit
+xgboost
+langchain
+langchain-openai
+langchain-experimental
 faiss-cpu
