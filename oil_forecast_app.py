@@ -12,7 +12,7 @@ from langchain.agents.agent_types import AgentType
 from langchain.agents import create_pandas_dataframe_agent
 
 # Set OpenAI API Key
-os.environ["OPENAI_API_KEY"] = "your-openai-api-key"  # Replace with st.secrets["OPENAI_API_KEY"] in deployment
+os.environ["OPENAI_API_KEY"] = st.secrets["OPENAI_API_KEY"] 
 
 st.set_page_config(layout="wide")
 st.title("🛢️ Oil Production Forecast Dashboard")
