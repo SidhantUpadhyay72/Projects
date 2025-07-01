@@ -14,14 +14,14 @@ colA, colB = st.columns(2)
 masked_file = colA.file_uploader("Upload 'masked_output1.csv' (Raw Production Data)", type=["csv"])
 forecast_file = colB.file_uploader("Upload 'oil_forecast_by_asset_well_field.csv' (Optional Forecast)", type=["csv"])
 
-# Load data
+# ✅ Updated data loader with flexible date parsing
 @st.cache_data
 def load_data(file):
     df = pd.read_csv(file)
     if 'Date' not in df.columns:
-        raise ValueError("❌ 'Date' column missing.")
+        raise ValueError("❌ 'Date' column missing in uploaded file.")
     df['Date'] = pd.to_datetime(df['Date'], errors='coerce')
-    df = df.dropna(subset=['Date'])  # Drop rows with unparsed dates
+    df = df.dropna(subset=['Date'])
     df['Oil_Production_MT'] = np.clip(df['Oil_Production_MT'], 0, df['Oil_Production_MT'].quantile(0.995))
     return df
 
@@ -88,7 +88,7 @@ if masked_file is not None:
             model = XGBRegressor(n_estimators=100, learning_rate=0.1)
             model.fit(X, y)
 
-            # Use latest available values for forecasting
+            # Use last known values to start forecast
             last_known = subset['Oil_Production_MT'].iloc[-lags:].tolist()
             forecast_dates = pd.date_range(start=forecast_start, periods=5, freq='MS')
             forecast_vals = []
