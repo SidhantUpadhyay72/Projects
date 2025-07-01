@@ -1,9 +1,9 @@
-streamlit
+langchain
+langchain-experimental
+openai
 pandas
 numpy
-plotly
 xgboost
-openai
+plotly
+streamlit
 faiss-cpu
-langchain==0.0.325
-langchain-openai
