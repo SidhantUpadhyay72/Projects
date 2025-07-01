@@ -28,7 +28,7 @@ def create_lag_features(df, lags=3):
 if masked_file is not None:
     df = load_data(masked_file)
 
-    # Optional forecast CSV
+    # Optional uploaded forecast
     forecast_df = None
     if forecast_file is not None:
         try:
@@ -37,7 +37,7 @@ if masked_file is not None:
         except Exception as e:
             st.warning(f"⚠️ Could not read forecast file: {e}")
 
-    # Selection
+    # Dropdowns for asset → well → field
     asset = st.selectbox("Select Asset", sorted(df['Masked_Asset'].unique()))
     wells = df[df['Masked_Asset'] == asset]['Masked_Well_no'].unique()
     well = st.selectbox("Select Well", sorted(wells))
@@ -66,6 +66,8 @@ if masked_file is not None:
                 st.error("❌ Not enough past data to start forecast from this date.")
             else:
                 last_known = history.iloc[-3:]['Oil_Production_MT'].tolist()
+
+                # Forecast 30 days ahead
                 forecast_dates = [datetime.combine(forecast_date, datetime.min.time()) + timedelta(days=i) for i in range(30)]
                 forecast_vals = []
 
@@ -77,17 +79,17 @@ if masked_file is not None:
 
                 forecast_df_30 = pd.DataFrame(forecast_vals, columns=["Date", "Forecast_Model"])
 
-                # ✅ FIX: match date exactly using .dt.date
-                forecast_df_30['Match_Date'] = forecast_df_30['Date'].dt.date
-                forecast_point = forecast_df_30[forecast_df_30['Match_Date'] == forecast_date]
+                # ✅ FIXED: compare dates correctly
+                forecast_df_30['Date'] = pd.to_datetime(forecast_df_30['Date']).dt.date
+                forecast_point = forecast_df_30[forecast_df_30['Date'] == forecast_date]
 
                 if not forecast_point.empty:
-                    value = forecast_point['Forecast_Model'].values[0]
-                    st.success(f"📅 Forecasted Oil Production on {forecast_date.strftime('%d-%m-%Y')}: **{value:.2f} MT**")
+                    val = forecast_point['Forecast_Model'].values[0]
+                    st.success(f"📅 Forecasted Oil Production on {forecast_date.strftime('%d-%m-%Y')}: **{val:.2f} MT**")
                 else:
                     st.warning(f"⚠️ Forecast for {forecast_date.strftime('%d-%m-%Y')} not found.")
 
-                # 📊 Plot
+                # 📊 Plot chart with actual and forecast
                 fig = go.Figure()
 
                 actual = subset[(subset['Date'] >= pd.to_datetime(forecast_date) - timedelta(days=30)) &
@@ -100,12 +102,12 @@ if masked_file is not None:
                         line=dict(color="steelblue")
                     ))
 
+                # Add forecast (convert Date back to datetime for plotting)
                 fig.add_trace(go.Scatter(
-                    x=forecast_df_30["Date"], y=forecast_df_30["Forecast_Model"],
+                    x=pd.to_datetime(forecast_df_30["Date"]), y=forecast_df_30["Forecast_Model"],
                     mode='lines+markers', name="Forecast (Next 30 days)", line=dict(color="crimson")
                 ))
 
-                # Optional uploaded forecast
                 if forecast_df is not None:
                     uploaded = forecast_df[
                         (forecast_df['Masked_Asset'] == asset) &
@@ -127,4 +129,4 @@ if masked_file is not None:
                 )
 
                 st.plotly_chart(fig, use_container_width=True)
-                st.dataframe(forecast_df_30[["Date", "Forecast_Model"]].set_index("Date"))
+                st.dataframe(forecast_df_30.set_index("Date"))
