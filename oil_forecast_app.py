@@ -1,9 +1,18 @@
+import os
 import streamlit as st
 import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
 from xgboost import XGBRegressor
 from datetime import datetime
+
+# LangChain Imports
+from langchain.chat_models import ChatOpenAI
+from langchain.agents.agent_types import AgentType
+from langchain.agents import create_pandas_dataframe_agent
+
+# Set OpenAI API Key
+os.environ["OPENAI_API_KEY"] = "your-openai-api-key"  # Replace with st.secrets["OPENAI_API_KEY"] in deployment
 
 st.set_page_config(layout="wide")
 st.title("🛢️ Oil Production Forecast Dashboard")
@@ -38,91 +47,132 @@ if masked_file is not None:
             st.warning(f"⚠️ Could not read forecast file: {e}")
             forecast_df = None
 
-    # Asset → Well → Field Selection
-    asset = st.selectbox("Select Asset", sorted(df['Masked_Asset'].unique()))
-    wells = df[df['Masked_Asset'] == asset]['Masked_Well_no'].unique()
-    well = st.selectbox("Select Well", sorted(wells))
-    fields = df[(df['Masked_Asset'] == asset) & (df['Masked_Well_no'] == well)]['Masked_Field'].unique()
-    field = st.selectbox("Select Field", sorted(fields))
+    # Layout for forecasting and chatbot
+    col_main, col_chat = st.columns([2, 1])
 
-    # Date Input
-    col1, col2, col3 = st.columns(3)
-    year = col1.text_input("Forecast Start Year (e.g., 2025)", value="2025")
-    month = col2.text_input("Month (1-12)", value="6")
-    day = col3.text_input("Day (1-31)", value="30")
+    with col_main:
+        # Asset → Well → Field Selection
+        asset = st.selectbox("Select Asset", sorted(df['Masked_Asset'].unique()))
+        wells = df[df['Masked_Asset'] == asset]['Masked_Well_no'].unique()
+        well = st.selectbox("Select Well", sorted(wells))
+        fields = df[(df['Masked_Asset'] == asset) & (df['Masked_Well_no'] == well)]['Masked_Field'].unique()
+        field = st.selectbox("Select Field", sorted(fields))
 
-    # Forecast Button
-    if st.button("Generate Forecast"):
-        try:
-            start_date = datetime(int(year), int(month), int(day))
-            subset = df[(df['Masked_Asset'] == asset) &
-                        (df['Masked_Well_no'] == well) &
-                        (df['Masked_Field'] == field)].sort_values("Date")
+        # Date Input
+        col1, col2, col3 = st.columns(3)
+        year = col1.text_input("Forecast Start Year (e.g., 2025)", value="2025")
+        month = col2.text_input("Month (1-12)", value="6")
+        day = col3.text_input("Day (1-31)", value="30")
 
-            subset = create_lag_features(subset)
-            if subset.shape[0] < 10:
-                st.error("❌ Not enough data after lag creation.")
-            else:
-                X = subset[[f'lag_{i}' for i in range(1, 4)]]
-                y = subset['Oil_Production_MT']
-                model = XGBRegressor(n_estimators=100, learning_rate=0.1)
-                model.fit(X, y)
+        # Forecast Button
+        if st.button("Generate Forecast"):
+            try:
+                start_date = datetime(int(year), int(month), int(day))
+                subset = df[(df['Masked_Asset'] == asset) &
+                            (df['Masked_Well_no'] == well) &
+                            (df['Masked_Field'] == field)].sort_values("Date")
 
-                history = subset[subset['Date'] < start_date].copy()
-                if history.shape[0] < 3:
-                    st.error("❌ Not enough data before forecast start date.")
+                subset = create_lag_features(subset)
+                if subset.shape[0] < 10:
+                    st.error("❌ Not enough data after lag creation.")
                 else:
-                    last_known = history.iloc[-3:]['Oil_Production_MT'].tolist()
-                    forecast_dates = pd.date_range(start=start_date, periods=5, freq='MS')
-                    forecast_vals = []
+                    X = subset[[f'lag_{i}' for i in range(1, 4)]]
+                    y = subset['Oil_Production_MT']
+                    model = XGBRegressor(n_estimators=100, learning_rate=0.1)
+                    model.fit(X, y)
 
-                    for d in forecast_dates:
-                        X_input = np.array(last_known[-3:]).reshape(1, -1)
-                        pred = model.predict(X_input)[0]
-                        forecast_vals.append((d, pred))
-                        last_known.append(pred)
+                    history = subset[subset['Date'] < start_date].copy()
+                    if history.shape[0] < 3:
+                        st.error("❌ Not enough data before forecast start date.")
+                    else:
+                        last_known = history.iloc[-3:]['Oil_Production_MT'].tolist()
+                        forecast_dates = pd.date_range(start=start_date, periods=5, freq='MS')
+                        forecast_vals = []
 
-                    model_forecast = pd.DataFrame(forecast_vals, columns=["Date", "Forecast_Model"])
+                        for d in forecast_dates:
+                            X_input = np.array(last_known[-3:]).reshape(1, -1)
+                            pred = model.predict(X_input)[0]
+                            forecast_vals.append((d, pred))
+                            last_known.append(pred)
 
-                    # Plotting
-                    actual = subset[(subset['Date'] >= start_date - pd.Timedelta(days=30)) & (subset['Date'] < start_date)]
-                    fig = go.Figure()
+                        model_forecast = pd.DataFrame(forecast_vals, columns=["Date", "Forecast_Model"])
 
-                    if not actual.empty:
-                        fig.add_trace(go.Scatter(
-                            x=actual['Date'], y=actual['Oil_Production_MT'],
-                            mode='lines+markers', name="Actual (Last 30 days)",
-                            line=dict(color="steelblue")
-                        ))
+                        # Plotting
+                        actual = subset[(subset['Date'] >= start_date - pd.Timedelta(days=30)) & (subset['Date'] <= start_date)]
+                        fig = go.Figure()
 
-                    fig.add_trace(go.Scatter(
-                        x=model_forecast["Date"], y=model_forecast["Forecast_Model"],
-                        mode='lines+markers', name="Forecast (Model)", line=dict(color="crimson")
-                    ))
-
-                    # If uploaded forecast matches the selected group
-                    if forecast_df is not None:
-                        uploaded_forecast = forecast_df[
-                            (forecast_df['Masked_Asset'] == asset) &
-                            (forecast_df['Masked_Well_no'] == well) &
-                            (forecast_df['Masked_Field'] == field)
-                        ]
-                        if not uploaded_forecast.empty:
+                        if not actual.empty:
                             fig.add_trace(go.Scatter(
-                                x=uploaded_forecast['Date'], y=uploaded_forecast['Forecast_Oil_Production_MT'],
-                                mode='lines+markers', name="Forecast (Uploaded)", line=dict(color="orange", dash="dot")
+                                x=actual['Date'], y=actual['Oil_Production_MT'],
+                                mode='lines+markers', name="Actual (Last 30 days + Start Date)",
+                                line=dict(color="steelblue")
                             ))
 
-                    fig.update_layout(
-                        title=f"Forecast from {start_date.strftime('%d-%m-%Y')} for {asset} / {well} / {field}",
-                        xaxis_title="Date",
-                        yaxis_title="Oil Production (MT)",
-                        template="plotly_white",
-                        height=550
-                    )
+                        fig.add_trace(go.Scatter(
+                            x=model_forecast["Date"], y=model_forecast["Forecast_Model"],
+                            mode='lines+markers', name="Forecast (Model)", line=dict(color="crimson")
+                        ))
 
-                    st.plotly_chart(fig, use_container_width=True)
-                    st.dataframe(model_forecast.set_index("Date"))
+                        if forecast_df is not None:
+                            uploaded_forecast = forecast_df[
+                                (forecast_df['Masked_Asset'] == asset) &
+                                (forecast_df['Masked_Well_no'] == well) &
+                                (forecast_df['Masked_Field'] == field)
+                            ]
+                            if not uploaded_forecast.empty:
+                                fig.add_trace(go.Scatter(
+                                    x=uploaded_forecast['Date'], y=uploaded_forecast['Forecast_Oil_Production_MT'],
+                                    mode='lines+markers', name="Forecast (Uploaded)", line=dict(color="orange", dash="dot")
+                                ))
+
+                        fig.update_layout(
+                            title=f"Forecast from {start_date.strftime('%d-%m-%Y')} for {asset} / {well} / {field}",
+                            xaxis_title="Date",
+                            yaxis_title="Oil Production (MT)",
+                            template="plotly_white",
+                            height=550
+                        )
+
+                        st.plotly_chart(fig, use_container_width=True)
+                        st.dataframe(model_forecast.set_index("Date"))
+
+            except Exception as e:
+                st.error(f"❌ Error generating forecast: {e}")
+
+    # === Chatbot Section ===
+    with col_chat:
+        st.subheader("🤖 Chat with Your Data")
+
+        try:
+            all_dfs = {"Raw Data": df}
+            if forecast_file is not None and forecast_df is not None:
+                all_dfs["Forecast Data"] = forecast_df
+
+            # Combine datasets with tag
+            combined_dfs = []
+            for name, data in all_dfs.items():
+                df_copy = data.copy()
+                df_copy['__source__'] = name
+                combined_dfs.append(df_copy)
+            chat_df = pd.concat(combined_dfs, ignore_index=True)
+
+            # Setup LLM agent
+            llm = ChatOpenAI(temperature=0.2, model="gpt-4")
+            agent = create_pandas_dataframe_agent(
+                llm,
+                chat_df,
+                agent_type=AgentType.OPENAI_FUNCTIONS,
+                verbose=False,
+                handle_parsing_errors=True,
+            )
+
+            # Chat UI
+            user_query = st.text_input("Ask anything 👇", placeholder="e.g., What is the max oil production per asset?")
+
+            if user_query:
+                with st.spinner("Thinking..."):
+                    response = agent.run(user_query)
+                    st.success(response)
 
         except Exception as e:
-            st.error(f"❌ Error generating forecast: {e}")
+            st.error(f"Chatbot Error: {e}")
