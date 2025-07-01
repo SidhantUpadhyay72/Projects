@@ -78,11 +78,14 @@ if masked_file is not None:
                 forecast_df_30 = pd.DataFrame(forecast_vals, columns=["Date", "Forecast_Model"])
 
                 # ✅ Fix: Show forecast for the selected date
-                forecast_point = forecast_df_30[forecast_df_30['Date'].dt.date == forecast_date]
-                if not forecast_point.empty:
-                    st.success(f"📅 Forecasted Oil Production on {forecast_date.strftime('%d-%m-%Y')}: **{forecast_point['Forecast_Model'].values[0]:.2f} MT**")
-                else:
-                    st.warning(f"⚠️ Forecast for {forecast_date.strftime('%d-%m-%Y')} not found.")
+                # ✅ Guaranteed Fix: Add column to match only dates (not datetime)
+                    forecast_df_30['Match_Date'] = forecast_df_30['Date'].dt.date
+                    forecast_point = forecast_df_30[forecast_df_30['Match_Date'] == forecast_date]
+
+                     if not forecast_point.empty:
+                         st.success(f"📅 Forecasted Oil Production on {forecast_date.strftime('%d-%m-%Y')}: **{forecast_point['Forecast_Model'].values[0]:.2f} MT**")
+                     else:
+                         st.warning(f"⚠️ Forecast for {forecast_date.strftime('%d-%m-%Y')} not found.")
 
                 # 📊 Plot
                 fig = go.Figure()
