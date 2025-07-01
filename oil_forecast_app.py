@@ -1,6 +1,144 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
+from xgboost import XGBRegressor
+import plotly.graph_objects as go
+from datetime import datetime
+import warnings
+
+warnings.filterwarnings("ignore")
+
+st.set_page_config(layout="wide")
+st.title("🛢️ Oil Production Forecast Dashboard")
+
+col1, col2 = st.columns(2)
+historical_file = col1.file_uploader("Upload Historical Data: masked_output1.csv", type=["csv"])
+uploaded_forecast_file = col2.file_uploader("Upload External Forecast (next_6_months.csv)", type=["csv"])
+
+if historical_file is not None:
+    df = pd.read_csv(historical_file)
+    df['Date'] = pd.to_datetime(df['Date'], errors='coerce')
+    df = df.dropna(subset=['Date'])
+    df['Oil_Production_MT'] = np.clip(df['Oil_Production_MT'], 0, df['Oil_Production_MT'].quantile(0.995))
+
+    external_forecast_df = None
+    if uploaded_forecast_file is not None:
+        try:
+            external_forecast_df = pd.read_csv(uploaded_forecast_file)
+            external_forecast_df['Date'] = pd.to_datetime(external_forecast_df['Date'], errors='coerce')
+        except Exception as e:
+            st.warning(f"⚠️ Could not read forecast file: {e}")
+            external_forecast_df = None
+
+    asset = st.selectbox("Select Asset", sorted(df['Masked_Asset'].dropna().unique()))
+    well = st.selectbox("Select Well", sorted(df[df['Masked_Asset'] == asset]['Masked_Well_no'].dropna().unique()))
+    field = st.selectbox("Select Field", sorted(df[(df['Masked_Asset'] == asset) & (df['Masked_Well_no'] == well)]['Masked_Field'].dropna().unique()))
+
+    subset = df[(df['Masked_Asset'] == asset) & 
+                (df['Masked_Well_no'] == well) & 
+                (df['Masked_Field'] == field)].sort_values("Date")
+
+    def create_features(data, lags=3):
+        for i in range(1, lags + 1):
+            data[f'lag_{i}'] = data['Oil_Production_MT'].shift(i)
+        return data.dropna()
+
+    subset = create_features(subset)
+
+    if subset.shape[0] < 10:
+        st.warning("❌ Not enough data to build model.")
+        st.stop()
+
+    # Train model
+    X = subset[[f'lag_{i}' for i in range(1, 4)]]
+    y = subset['Oil_Production_MT']
+    model = XGBRegressor(n_estimators=100, learning_rate=0.1)
+    model.fit(X, y)
+
+    # Forecast next 6 months
+    last_known = subset['Oil_Production_MT'].iloc[-3:].tolist()
+    last_date = subset['Date'].max()
+    forecast_dates = pd.date_range(start=last_date + pd.DateOffset(months=1), periods=6, freq='MS')
+    forecast_values = []
+
+    for date in forecast_dates:
+        X_input = np.array(last_known[-3:]).reshape(1, -1)
+        pred = model.predict(X_input)[0]
+        forecast_values.append((date, pred))
+        last_known.append(pred)
+
+    model_forecast_df = pd.DataFrame(forecast_values, columns=["Date", "Forecast_Model"])
+    model_forecast_df['Masked_Asset'] = asset
+    model_forecast_df['Masked_Well_no'] = well
+    model_forecast_df['Masked_Field'] = field
+
+    # Plot
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(
+        x=subset['Date'], y=subset['Oil_Production_MT'],
+        name="Actual", mode='lines+markers', line=dict(color="steelblue")
+    ))
+
+    fig.add_trace(go.Scatter(
+        x=model_forecast_df['Date'], y=model_forecast_df['Forecast_Model'],
+        name="Model Forecast", mode='lines+markers', line=dict(color="crimson")
+    ))
+
+    if external_forecast_df is not None:
+        match = external_forecast_df[
+            (external_forecast_df['Masked_Asset'] == asset) &
+            (external_forecast_df['Masked_Well_no'] == well) &
+            (external_forecast_df['Masked_Field'] == field)
+        ]
+        if not match.empty:
+            fig.add_trace(go.Scatter(
+                x=match['Date'], y=match['Forecast_Oil_Production_MT'],
+                name="Uploaded Forecast", mode='lines+markers', line=dict(color="orange", dash="dot")
+            ))
+
+    fig.update_layout(title="Oil Production Forecast vs Actual", xaxis_title="Date", yaxis_title="Oil Production (MT)", height=500)
+    st.plotly_chart(fig, use_container_width=True)
+
+    # Forecast input by date
+    st.subheader("🔍 Lookup Forecast by Date")
+    forecast_input_date = st.date_input("Enter a date (within next 6 months):", value=datetime.today())
+
+    forecast_for_date = None
+    input_dt = pd.to_datetime(forecast_input_date)
+
+    # Check in model forecast
+    match_model = model_forecast_df[model_forecast_df['Date'] == input_dt]
+    if not match_model.empty:
+        forecast_for_date = match_model['Forecast_Model'].values[0]
+        st.success(f"📈 Model Forecast for {input_dt.strftime('%d-%b-%Y')}: **{forecast_for_date:.2f} MT**")
+
+    # Check in uploaded forecast
+    if external_forecast_df is not None:
+        match_uploaded = external_forecast_df[
+            (external_forecast_df['Masked_Asset'] == asset) &
+            (external_forecast_df['Masked_Well_no'] == well) &
+            (external_forecast_df['Masked_Field'] == field) &
+            (external_forecast_df['Date'] == input_dt)
+        ]
+        if not match_uploaded.empty:
+            forecast_uploaded = match_uploaded['Forecast_Oil_Production_MT'].values[0]
+            st.info(f"📤 Uploaded Forecast for {input_dt.strftime('%d-%b-%Y')}: **{forecast_uploaded:.2f} MT**")
+
+    if forecast_for_date is None and (external_forecast_df is None or match_uploaded.empty):
+        st.warning("❌ No forecast available for the selected date.")
+
+    # Download button
+    st.download_button(
+        label="📥 Download Model Forecast CSV",
+        data=model_forecast_df.to_csv(index=False).encode('utf-8'),
+        file_name='model_forecast.csv',
+        mime='text/csv'
+    )
+else:
+    st.info("Please upload the required historical CSV file to begin.")
+import streamlit as st
+import pandas as pd
+import numpy as np
 import plotly.graph_objects as go
 from xgboost import XGBRegressor
 from datetime import datetime
