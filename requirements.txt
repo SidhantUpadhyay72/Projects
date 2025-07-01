@@ -3,7 +3,7 @@ pandas
 numpy
 plotly
 xgboost
-langchain
-langchain-openai
-faiss-cpu
 openai
+faiss-cpu
+langchain==0.0.325
+langchain-openai
