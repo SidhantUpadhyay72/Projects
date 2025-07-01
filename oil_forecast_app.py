@@ -5,14 +5,13 @@ import plotly.graph_objects as go
 from xgboost import XGBRegressor
 from datetime import datetime, timedelta
 
-# Streamlit page config
 st.set_page_config(layout="wide")
 st.title("🛢️ Oil Production Forecast Dashboard")
 
-# Upload section
+# Upload data
 col1, col2 = st.columns(2)
-raw_file = col1.file_uploader("Upload 'masked_output1.csv'", type=["csv"])
-optional_forecast_file = col2.file_uploader("Upload optional 'oil_forecast_by_asset_well_field.csv'", type=["csv"])
+masked_file = col1.file_uploader("Upload 'masked_output1.csv'", type=["csv"])
+forecast_file = col2.file_uploader("Upload 'oil_forecast_by_asset_well_field.csv' (optional)", type=["csv"])
 
 @st.cache_data
 def load_data(file):
@@ -26,65 +25,60 @@ def create_lag_features(df, lags=3):
         df[f'lag_{i}'] = df['Oil_Production_MT'].shift(i)
     return df.dropna()
 
-if raw_file is not None:
-    df = load_data(raw_file)
+if masked_file is not None:
+    df = load_data(masked_file)
 
-    # Forecast CSV (optional)
+    # Optional uploaded forecast
     uploaded_forecast = None
-    if optional_forecast_file is not None:
+    if forecast_file is not None:
         try:
-            uploaded_forecast = pd.read_csv(optional_forecast_file)
+            uploaded_forecast = pd.read_csv(forecast_file)
             uploaded_forecast['Date'] = pd.to_datetime(uploaded_forecast['Date'])
         except Exception as e:
             st.warning(f"⚠️ Could not read forecast file: {e}")
 
-    # UI: Asset → Well → Field
+    # Selectors
     asset = st.selectbox("Select Asset", sorted(df['Masked_Asset'].unique()))
     well = st.selectbox("Select Well", sorted(df[df['Masked_Asset'] == asset]['Masked_Well_no'].unique()))
     field = st.selectbox("Select Field", sorted(df[(df['Masked_Asset'] == asset) & (df['Masked_Well_no'] == well)]['Masked_Field'].unique()))
-
-    # Forecast date
     forecast_date = st.date_input("Select Forecast Start Date", value=datetime.today().date())
 
-    if st.button("🔮 Generate Forecast"):
-        subset = df[(df['Masked_Asset'] == asset) & (df['Masked_Well_no'] == well) & (df['Masked_Field'] == field)].sort_values("Date")
+    if st.button("🔮 Generate 30-Day Forecast"):
+        subset = df[(df['Masked_Asset'] == asset) &
+                    (df['Masked_Well_no'] == well) &
+                    (df['Masked_Field'] == field)].sort_values("Date")
 
         subset = create_lag_features(subset)
         if subset.shape[0] < 10:
-            st.error("❌ Not enough data for selected well/field/asset.")
+            st.error("❌ Not enough data for this selection.")
         else:
             X = subset[[f'lag_{i}' for i in range(1, 4)]]
             y = subset['Oil_Production_MT']
-
             model = XGBRegressor(n_estimators=100, learning_rate=0.1)
             model.fit(X, y)
 
-            # Use data before the forecast date
             history = subset[subset['Date'].dt.date < forecast_date]
             if history.shape[0] < 3:
-                st.error("❌ Not enough history before selected date.")
+                st.error("❌ Not enough past data before forecast date.")
             else:
                 last_known = history.tail(3)['Oil_Production_MT'].tolist()
+                forecast_vals = []
                 forecast_dates = [datetime.combine(forecast_date, datetime.min.time()) + timedelta(days=i) for i in range(30)]
 
-                forecast_values = []
                 for d in forecast_dates:
-                    X_input = np.array(last_known[-3:]).reshape(1, -1)
-                    pred = model.predict(X_input)[0]
-                    forecast_values.append((d, pred))
+                    pred = model.predict(np.array(last_known[-3:]).reshape(1, -1))[0]
+                    forecast_vals.append((d.date(), pred))
                     last_known.append(pred)
 
-                forecast_df = pd.DataFrame(forecast_values, columns=['Date', 'Forecast_Oil_Production_MT'])
+                forecast_df = pd.DataFrame(forecast_vals, columns=['Date', 'Forecast_Oil_Production_MT'])
 
-                # ✅ Extract exact date forecast
-                forecast_df['Only_Date'] = forecast_df['Date'].dt.date
-                match_row = forecast_df[forecast_df['Only_Date'] == forecast_date]
-
-                if not match_row.empty:
-                    forecast_val = match_row.iloc[0]['Forecast_Oil_Production_MT']
-                    st.success(f"📅 Forecasted Oil Production on {forecast_date.strftime('%d-%m-%Y')}: **{forecast_val:.2f} MT**")
+                # ✅ Exact match with forecast_date
+                match = forecast_df[forecast_df['Date'] == forecast_date]
+                if not match.empty:
+                    val = match.iloc[0]['Forecast_Oil_Production_MT']
+                    st.success(f"📅 Forecasted Oil Production on {forecast_date.strftime('%d-%m-%Y')}: **{val:.2f} MT**")
                 else:
-                    st.warning(f"⚠️ Could not find forecast for {forecast_date}")
+                    st.error(f"❌ Forecast for {forecast_date} not found.")
 
                 # 📈 Plot
                 fig = go.Figure()
@@ -101,21 +95,21 @@ if raw_file is not None:
 
                 # Forecast plot
                 fig.add_trace(go.Scatter(
-                    x=forecast_df['Date'], y=forecast_df['Forecast_Oil_Production_MT'],
+                    x=pd.to_datetime(forecast_df['Date']), y=forecast_df['Forecast_Oil_Production_MT'],
                     mode='lines+markers', name='Forecast (Next 30 Days)',
                     line=dict(color='crimson')
                 ))
 
                 # Optional uploaded forecast
                 if uploaded_forecast is not None:
-                    uploaded_subset = uploaded_forecast[
+                    uf = uploaded_forecast[
                         (uploaded_forecast['Masked_Asset'] == asset) &
                         (uploaded_forecast['Masked_Well_no'] == well) &
                         (uploaded_forecast['Masked_Field'] == field)
                     ]
-                    if not uploaded_subset.empty:
+                    if not uf.empty:
                         fig.add_trace(go.Scatter(
-                            x=uploaded_subset['Date'], y=uploaded_subset['Forecast_Oil_Production_MT'],
+                            x=uf['Date'], y=uf['Forecast_Oil_Production_MT'],
                             mode='lines+markers', name='Forecast (Uploaded)',
                             line=dict(color='orange', dash='dot')
                         ))
@@ -129,4 +123,4 @@ if raw_file is not None:
                 )
 
                 st.plotly_chart(fig, use_container_width=True)
-                st.dataframe(forecast_df[['Date', 'Forecast_Oil_Production_MT']].set_index('Date'))
+                st.dataframe(forecast_df.set_index('Date'))
