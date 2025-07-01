@@ -8,7 +8,7 @@ from datetime import datetime
 
 # LangChain & OpenAI Chatbot imports
 from langchain.chat_models import ChatOpenAI
-from langchain_experimental.agents import create_pandas_dataframe_agent
+langchain_experimental.agents.create_pandas_dataframe_agent`.
 
 from langchain.agents.agent_types import AgentType
 
