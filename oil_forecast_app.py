@@ -76,14 +76,18 @@ if masked_file is not None:
                     last_known.append(pred)
 
                 forecast_df_30 = pd.DataFrame(forecast_vals, columns=["Date", "Forecast_Model"])
-                forecast_point = forecast_df_30[forecast_df_30['Date'] == pd.to_datetime(forecast_date)]
 
-                st.success(f"📅 Forecasted Oil Production on {forecast_date.strftime('%d-%m-%Y')}: **{forecast_point['Forecast_Model'].values[0]:.2f} MT**")
+                # ✅ Fix: Show forecast for the selected date
+                forecast_point = forecast_df_30[forecast_df_30['Date'].dt.date == forecast_date]
+                if not forecast_point.empty:
+                    st.success(f"📅 Forecasted Oil Production on {forecast_date.strftime('%d-%m-%Y')}: **{forecast_point['Forecast_Model'].values[0]:.2f} MT**")
+                else:
+                    st.warning(f"⚠️ Forecast for {forecast_date.strftime('%d-%m-%Y')} not found.")
 
-                # Plot
+                # 📊 Plot
                 fig = go.Figure()
 
-                actual = subset[(subset['Date'] >= pd.to_datetime(forecast_date) - timedelta(days=30)) & 
+                actual = subset[(subset['Date'] >= pd.to_datetime(forecast_date) - timedelta(days=30)) &
                                 (subset['Date'] < pd.to_datetime(forecast_date))]
 
                 if not actual.empty:
