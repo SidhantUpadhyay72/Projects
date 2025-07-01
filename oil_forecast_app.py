@@ -45,7 +45,7 @@ if masked_file is not None:
     field = st.selectbox("Select Field", sorted(fields))
 
     # Date input
-    forecast_date = st.date_input("Select Forecast Start Date", value=datetime.today())
+    forecast_date = st.date_input("Select Forecast Start Date", value=datetime.today().date())
 
     if st.button("🔮 Generate 30-Day Forecast"):
         subset = df[(df['Masked_Asset'] == asset) &
@@ -61,12 +61,12 @@ if masked_file is not None:
             model = XGBRegressor(n_estimators=100, learning_rate=0.1)
             model.fit(X, y)
 
-            history = subset[subset['Date'] < pd.to_datetime(forecast_date)].copy()
+            history = subset[subset['Date'].dt.date < forecast_date].copy()
             if history.shape[0] < 3:
                 st.error("❌ Not enough past data to start forecast from this date.")
             else:
                 last_known = history.iloc[-3:]['Oil_Production_MT'].tolist()
-                forecast_dates = [forecast_date + timedelta(days=i) for i in range(30)]
+                forecast_dates = [datetime.combine(forecast_date, datetime.min.time()) + timedelta(days=i) for i in range(30)]
                 forecast_vals = []
 
                 for d in forecast_dates:
@@ -77,15 +77,15 @@ if masked_file is not None:
 
                 forecast_df_30 = pd.DataFrame(forecast_vals, columns=["Date", "Forecast_Model"])
 
-                # ✅ Fix: Show forecast for the selected date
-                # ✅ Guaranteed Fix: Add column to match only dates (not datetime)
-                    forecast_df_30['Match_Date'] = forecast_df_30['Date'].dt.date
-                    forecast_point = forecast_df_30[forecast_df_30['Match_Date'] == forecast_date]
+                # ✅ FIX: match date exactly using .dt.date
+                forecast_df_30['Match_Date'] = forecast_df_30['Date'].dt.date
+                forecast_point = forecast_df_30[forecast_df_30['Match_Date'] == forecast_date]
 
-                     if not forecast_point.empty:
-                         st.success(f"📅 Forecasted Oil Production on {forecast_date.strftime('%d-%m-%Y')}: **{forecast_point['Forecast_Model'].values[0]:.2f} MT**")
-                     else:
-                         st.warning(f"⚠️ Forecast for {forecast_date.strftime('%d-%m-%Y')} not found.")
+                if not forecast_point.empty:
+                    value = forecast_point['Forecast_Model'].values[0]
+                    st.success(f"📅 Forecasted Oil Production on {forecast_date.strftime('%d-%m-%Y')}: **{value:.2f} MT**")
+                else:
+                    st.warning(f"⚠️ Forecast for {forecast_date.strftime('%d-%m-%Y')} not found.")
 
                 # 📊 Plot
                 fig = go.Figure()
@@ -127,4 +127,4 @@ if masked_file is not None:
                 )
 
                 st.plotly_chart(fig, use_container_width=True)
-                st.dataframe(forecast_df_30.set_index("Date"))
+                st.dataframe(forecast_df_30[["Date", "Forecast_Model"]].set_index("Date"))
